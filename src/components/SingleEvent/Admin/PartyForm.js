@@ -437,6 +437,8 @@ class PartyForm extends Component {
       roles = []
     } = props
 
+    console.log(props, 'props')
+
     const [startDay, startTime] = getDayAndTimeFromDate(start)
     const [endDay, endTime] = getDayAndTimeFromDate(end)
     const [arriveByDay, arriveByTime] = getDayAndTimeFromDate(arriveBy)
@@ -584,6 +586,7 @@ class PartyForm extends Component {
       <GlobalConsumer>
         {({ networkState }) => (
           <PartyFormContainer>
+            {console.log(networkState, 'NETWORKSTATE in PARTY FORM')}
             <H2>Event Details</H2>
             <PartyFormContent>
               <InputWrapper>

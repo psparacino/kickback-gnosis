@@ -1,5 +1,5 @@
 import _ from 'lodash'
-import React, { createContext, Component } from 'react'
+import React, { createContext, Component, useState, useEffect } from 'react'
 import { withApollo } from 'react-apollo'
 import jwt from 'jsonwebtoken'
 import Web3 from 'web3'
@@ -47,13 +47,30 @@ const TOKEN_ALGORITHM = 'HS256'
 
 const walletChecks = [{ checkName: 'connect' }, { checkName: 'network' }]
 
+// const getNetworkId = networkId => {
+//   console.log(window.ethereum.chainId, 'networkVersion')
+//   let chainId = parseInt((window.ethereum.chainId), 16);
+//   if (networkId !== "nothing") {
+//     // Default chainId for ganache
+//     // return 1337
+//     return 1337
+//   } else {
+//     return parseInt(networkId)
+//   }
+// }
+
 const getNetworkId = networkId => {
-  if (networkId === '35') {
-    // Default chainId for ganache
-    // return 1337
-    return 1337
+  if (window.ethereum) {
+    let chainId = parseInt(window.ethereum.chainId, 16)
+    if (chainId) {
+      // Default chainId for ganache
+      // return 1337
+      return chainId
+    } else {
+      return parseInt(networkId)
+    }
   } else {
-    return parseInt(networkId)
+    alert('PLease Install MetaMask to Continue.')
   }
 }
 
@@ -91,8 +108,9 @@ const wallets = [
   }
 ]
 
+// GET WALLETS
 const getWallets = networkId => {
-  console.log({ networkId })
+  console.log({ networkId }, 'networkID in getWallets()')
   if ([1, 100, 137].includes(networkId)) {
     return wallets
   } else {
@@ -101,12 +119,14 @@ const getWallets = networkId => {
   }
 }
 
+// COMPONENT STARTS HERE!!!
 class Provider extends Component {
   state = {
     apolloClient: this.props.client,
     currentModal: null,
     auth: LocalStorage.getItem(AUTH) || {},
     networkState: {},
+    provider: null,
     web3: null
   }
 
@@ -123,8 +143,12 @@ class Provider extends Component {
   }
 
   setUpWallet = async args => {
-    const { action, networkId, dontForceSetUp } = args
-    console.log({ action, networkId, dontForceSetUp })
+    console.log(args, 'args')
+    const { action, networkId, currentChainID, dontForceSetUp } = args
+    console.log(
+      { action, networkId, currentChainID, dontForceSetUp },
+      'setUpWallet args'
+    )
     // Check if user has chosen a wallet before, if so just use that.
     // If not, the user will have to select a wallet so only proceed if required.
     const lastUsedWallet = LocalStorage.getItem(WALLET)
@@ -133,30 +157,34 @@ class Provider extends Component {
     }
 
     let { onboard } = this.state
+    console.log(web3, 'web3 check')
 
     if (!onboard) {
+      // console.log(currentChainID, "currenID in setupWallet")
       // dappid is mandatory so will have throw away id for local usage.
       let testid = 'c212885d-e81d-416f-ac37-06d9ad2cf5af'
+
       onboard = Onboard({
         dappId: BLOCKNATIVE_DAPPID || testid,
-        networkId: getNetworkId(networkId),
+        networkId: getNetworkId(),
         networkName: NETWORK_NAME || 'local',
         walletCheck: walletChecks,
         walletSelect: {
           heading: 'Select a wallet to connect to Kickback',
           description:
             'To use Kickback you need an Ethereum wallet. Please select one from below:',
-          wallets: getWallets(getNetworkId(networkId))
+          wallets: getWallets(getNetworkId())
         }
       })
       this.setState({ onboard })
 
       var notify = Notify({
         dappId: BLOCKNATIVE_DAPPID || testid,
-        networkId: parseInt(networkId) // [Integer] The Ethereum network ID your Dapp uses.
+        networkId: networkId // [Integer] The Ethereum network ID your Dapp uses.
       })
       this.setState({ notify })
     }
+    console.log(networkId, 'networkID check GS.js')
 
     let result = {
       action,
@@ -180,6 +208,7 @@ class Provider extends Component {
             mobileDevice
             // appNetworkId
           } = walletState
+          console.log(walletState, 'walletState')
 
           // Save this wallet provider for next login
           LocalStorage.setItem(WALLET, wallet.name)
@@ -195,7 +224,10 @@ class Provider extends Component {
             ...result
           }
 
-          result.correctNetwork = network === parseInt(networkId)
+          // result.correctNetwork = network === parseInt(networkId)
+          result.correctNetwork = network === parseInt(getNetworkId())
+
+          console.log(result, 'result')
 
           // We want to know whether the users have any balances in their walllet
           // but don't want to know how much they do.
@@ -222,13 +254,15 @@ class Provider extends Component {
     return web3
   }
 
-  signIn = async ({ dontForceSignIn } = {}) => {
+  signIn = async ({ dontForceSignIn, currentChainID } = {}) => {
     if (this.state.loggedIn) {
       return
     }
 
     if (!dontForceSignIn && !this.state.wallet) {
-      const { expectedNetworkId } = this.state.networkState
+      const expectedNetworkId = getNetworkId()
+      // const { expectedNetworkId } = this.state.networkState
+
       await this.setUpWallet({
         action: 'Sign in',
         networkId: expectedNetworkId
@@ -368,23 +402,36 @@ class Provider extends Component {
 
   async componentDidMount() {
     setProviderInstance(this)
-
     // Get which network app is on
     const networkState = await updateNetwork()
+    console.log(networkState.expectedNetworkId, 'networkState')
 
-    // Try and open wallet
-    await this.setUpWallet({
-      action: 'Sign In',
-      networkId: parseInt(networkState.expectedNetworkId),
-      dontForceSetUp: true
-    })
+    let { web3 } = this.state
 
-    // try and sign in!
-    await this.signIn({ dontForceSignIn: true })
+    if (web3) {
+      const currentChainID = await web3.eth.getChainId()
+      console.log(currentChainID, 'currentChainID in componentDidMount')
+      // Try and open wallet
+      await this.setUpWallet({
+        action: 'Sign In',
+        networkId: currentChainID,
+        dontForceSetUp: true
+      })
+      // try and sign in!
+      await this.signIn({ dontForceSignIn: true, currentChainID })
+    }
   }
 
   setNetworkState = networkState => {
-    this.setState({ networkState })
+    let expectedNetworkId = getNetworkId()
+    console.log(expectedNetworkId, 'currentChain')
+    // this.setState({ expectedNetworkId })
+
+    this.setState({
+      networkState: {
+        expectedNetworkId
+      }
+    })
   }
 
   reloadUserAddress = async () => {
@@ -403,7 +450,7 @@ class Provider extends Component {
         )
       })
     }
-
+    console.log(this.state.networkState, 'network State')
     return address
   }
 
@@ -429,6 +476,10 @@ class Provider extends Component {
           wallet: this.state.wallet
         }}
       >
+        {console.log(
+          this.state.networkState,
+          'NETWORK STATE AT BOOTM OF GLOBALSTATE'
+        )}
         {this.props.children}
       </GlobalContext.Provider>
     )
